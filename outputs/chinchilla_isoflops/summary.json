@@ -1,0 +1,82 @@
+{
+  "method": "lowest final loss per compute budget; OLS in log-log space",
+  "compute_relation": "C = 6*N*D",
+  "model_size_law": {
+    "coefficient": 1.1634106364198589,
+    "exponent": 0.468682667743702,
+    "r_squared": 0.9787041983969745
+  },
+  "dataset_size_law": {
+    "coefficient": 0.14325695627086213,
+    "exponent": 0.5313173322562993,
+    "r_squared": 0.9833505185574
+  },
+  "optimal_points": [
+    {
+      "compute_budget": 6e+18,
+      "parameters": 762093419,
+      "dataset_tokens": 1312175089.1277542,
+      "final_loss": 5.899930270214304
+    },
+    {
+      "compute_budget": 1e+19,
+      "parameters": 806647749,
+      "dataset_tokens": 2066164157.4439783,
+      "final_loss": 5.617943423092358
+    },
+    {
+      "compute_budget": 3e+19,
+      "parameters": 1536852354,
+      "dataset_tokens": 3253402961.5703735,
+      "final_loss": 5.107176953205009
+    },
+    {
+      "compute_budget": 6e+19,
+      "parameters": 1952041776,
+      "dataset_tokens": 5122841182.472726,
+      "final_loss": 4.830586005050577
+    },
+    {
+      "compute_budget": 1e+20,
+      "parameters": 3253402960,
+      "dataset_tokens": 5122841182.472726,
+      "final_loss": 4.6528929644335255
+    },
+    {
+      "compute_budget": 3e+20,
+      "parameters": 5903836027,
+      "dataset_tokens": 8469069901.558091,
+      "final_loss": 4.311218819265305
+    },
+    {
+      "compute_budget": 6e+20,
+      "parameters": 6971055968,
+      "dataset_tokens": 14345028996.903902,
+      "final_loss": 4.121240846441071
+    },
+    {
+      "compute_budget": 1e+21,
+      "parameters": 6859328563,
+      "dataset_tokens": 24297810658.27429,
+      "final_loss": 4.002834749948777
+    },
+    {
+      "compute_budget": 3e+21,
+      "parameters": 12148905329,
+      "dataset_tokens": 41155971378.46459,
+      "final_loss": 3.773187514504335
+    }
+  ],
+  "predictions": [
+    {
+      "compute_budget": 1e+23,
+      "optimal_parameters": 70054233904.71286,
+      "optimal_dataset_tokens": 237910911842.05276
+    },
+    {
+      "compute_budget": 1e+24,
+      "optimal_parameters": 206118539185.03964,
+      "optimal_dataset_tokens": 808596195789.2832
+    }
+  ]
+}
