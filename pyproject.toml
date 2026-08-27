@@ -11,6 +11,23 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+local = [
+    "einx>=0.3.0",
+    "einops>=0.8.1",
+    "equinox>=0.13.0",
+    "fastapi[standard]>=0.115",
+    "flash-hog>=0.5.0",
+    "huggingface-hub>=0.35",
+    "jax[cuda13]==0.9.1; sys_platform == 'linux'",
+    "jax==0.9.1; sys_platform != 'linux'",
+    "numpy>=2.2",
+    "optax>=0.2.3",
+    "pyarrow>=21.0",
+    "transformers>=5.6.2",
+    "typer>=0.12",
+    "uvicorn[standard]>=0.30",
+    "wandb>=0.26.1",
+]
 server = [
     "einx>=0.3.0",
     "einops>=0.8.1",
@@ -45,6 +62,10 @@ python-preference = "managed"
 
 [project.scripts]
 dispatcher = "cs336_scaling.scheduler.dispatch_loop:main"
+local-scaling = "cs336_scaling.local.cli:app"
+local-scaling-api = "cs336_scaling.local.api:main"
+local-scaling-worker = "cs336_scaling.local.worker:main"
+local-scaling-data = "cs336_scaling.local.prepare_data:app"
 
 [tool.fastapi]
 entrypoint = "cs336_scaling.app:app"

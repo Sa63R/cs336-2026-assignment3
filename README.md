@@ -33,6 +33,9 @@ example of submitting and inspecting training runs.
 
 ## For non-students
 
+For the RTX 4060 local JAX queue, checkpoints, DCLM preparation, W&B mirroring,
+and the 3h + 12h workflow, see [Local single-GPU scaling](docs/local_scaling.md).
+
 Install dependencies:
 
 ```sh
