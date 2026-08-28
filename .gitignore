@@ -220,3 +220,5 @@ logs/
 
 # Local single-GPU experiment state, downloaded tokens, runs, and checkpoints.
 .local_scaling/
+
+outputs/
