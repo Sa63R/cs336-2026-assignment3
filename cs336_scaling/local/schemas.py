@@ -25,6 +25,7 @@ ExperimentStatus = Literal[
     "interrupted",
 ]
 WandbMode = Literal["disabled", "offline", "online"]
+ComputeParameterBasis = Literal["non_embedding"]
 
 
 class LocalTrainingConfig(FrozenForbidExtraModel):
@@ -114,6 +115,7 @@ class LocalExperimentConfig(FrozenForbidExtraModel):
     training: LocalTrainingConfig
     dataset_manifest: Path
     target_compute_flops: float | None = Field(default=None, gt=0)
+    compute_parameter_basis: ComputeParameterBasis | None = None
     budget_group: BudgetGroup = "scaling"
     priority: int = Field(default=0, ge=-100, le=100)
     checkpoint: CheckpointConfig = Field(default_factory=CheckpointConfig)

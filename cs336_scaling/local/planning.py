@@ -1,12 +1,23 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 from cs336_scaling.training.model.config import BasicTransformerConfig
 
 
-def estimate_parameter_count(config: BasicTransformerConfig) -> int:
-    """Exactly count trainable scalars in ``BasicCausalLM`` from its config."""
+@dataclass(frozen=True)
+class ParameterCounts:
+    """Parameter counts needed for scaling-law and hardware accounting."""
+
+    total: int
+    non_embedding: int
+    embedding: int
+    approximate_non_embedding: int
+
+
+def estimate_parameter_counts(config: BasicTransformerConfig) -> ParameterCounts:
+    """Exactly count ``BasicCausalLM`` scalars and the course's 12Ld² proxy."""
 
     hidden = config.hidden_size
     intermediate = config.intermediate_size
@@ -21,8 +32,43 @@ def estimate_parameter_count(config: BasicTransformerConfig) -> int:
         + 2 * head_dim
         + attention_biases
     )
-    return (
-        embedding_parameters + config.num_hidden_layers * parameters_per_layer + hidden
+    non_embedding_parameters = config.num_hidden_layers * parameters_per_layer + hidden
+    return ParameterCounts(
+        total=embedding_parameters + non_embedding_parameters,
+        non_embedding=non_embedding_parameters,
+        embedding=embedding_parameters,
+        approximate_non_embedding=(
+            12 * config.num_hidden_layers * config.hidden_size**2
+        ),
+    )
+
+
+def estimate_parameter_count(config: BasicTransformerConfig) -> int:
+    """Exactly count trainable scalars in ``BasicCausalLM`` from its config."""
+
+    return estimate_parameter_counts(config).total
+
+
+def runtime_limit_for_compute(
+    target_compute_flops: float,
+    *,
+    reference_flops_per_second: float,
+    margin: float,
+    minimum_seconds: float,
+) -> float:
+    """Convert a FLOPs profile into a conservative per-run runtime limit."""
+
+    values = (
+        target_compute_flops,
+        reference_flops_per_second,
+        margin,
+        minimum_seconds,
+    )
+    if any(not math.isfinite(value) or value <= 0 for value in values):
+        raise ValueError("runtime planning values must be positive and finite")
+    return max(
+        minimum_seconds,
+        target_compute_flops / reference_flops_per_second * margin,
     )
 
 

@@ -25,7 +25,9 @@ from cs336_scaling.local.schemas import (
 )
 from cs336_scaling.local.planning import (
     estimate_parameter_count,
+    estimate_parameter_counts,
     round_tokens_for_compute,
+    runtime_limit_for_compute,
 )
 from cs336_scaling.local.settings import LocalSettings
 from cs336_scaling.training.model.config import BasicTransformerConfig
@@ -53,7 +55,7 @@ def write_dataset(settings: LocalSettings) -> Path:
     directory.mkdir(parents=True)
     train_path = directory / "train.npy"
     validation_path = directory / "validation.npy"
-    np.save(train_path, np.arange(2_049, dtype=np.uint16) % 256)
+    np.save(train_path, np.arange(8_193, dtype=np.uint16) % 256)
     np.save(validation_path, np.arange(2_049, dtype=np.uint16) % 256)
     manifest = DatasetManifest(
         dataset_id="test-dataset-id",
@@ -64,7 +66,7 @@ def write_dataset(settings: LocalSettings) -> Path:
         seed=67,
         train_tokens_path=Path("train.npy"),
         validation_tokens_path=Path("validation.npy"),
-        train_tokens=2_049,
+        train_tokens=8_193,
         validation_tokens=2_049,
         train_sha256=sha256_file(train_path),
         validation_sha256=sha256_file(validation_path),
@@ -236,16 +238,30 @@ def test_parameter_estimate_and_compute_rounding(tmp_path: Path):
     architecture = experiment_config(manifest_path).training.architecture_config
 
     parameters = estimate_parameter_count(architecture)
+    counts = estimate_parameter_counts(architecture)
     assert parameters == 57_600
-    target_compute = 6 * parameters * 2_048
+    assert counts.total == parameters
+    assert counts.embedding == 16_384
+    assert counts.non_embedding == 41_216
+    assert counts.approximate_non_embedding == 49_152
+    target_compute = 6 * counts.non_embedding * 2_048
     assert (
         round_tokens_for_compute(
             target_compute,
-            parameters=parameters,
+            parameters=counts.non_embedding,
             token_quantum=512,
             maximum_tokens=2_048,
         )
         == 2_048
+    )
+    assert (
+        runtime_limit_for_compute(
+            1e12,
+            reference_flops_per_second=2e11,
+            margin=1.3,
+            minimum_seconds=10,
+        )
+        == 10
     )
 
 
@@ -280,11 +296,14 @@ def test_make_sweep_and_export_completed_runs(tmp_path: Path, monkeypatch):
     )
     assert generated.exit_code == 0, generated.output
     plan = json.loads((output_dir / "plan.json").read_text())
-    assert len(plan) == 1
+    assert plan["parameter_basis"] == "non_embedding"
+    assert len(plan["configs"]) == 1
+    row = plan["configs"][0]
 
     config = LocalExperimentConfig.model_validate_json(
-        (output_dir / plan[0]["config"]).read_text()
+        (output_dir / row["config"]).read_text()
     )
+    assert config.compute_parameter_basis == "non_embedding"
     database = LocalDatabase(settings)
     database.initialize()
     experiment_id = database.submit(
@@ -298,9 +317,22 @@ def test_make_sweep_and_export_completed_runs(tmp_path: Path, monkeypatch):
         status="completed",
         used_runtime_seconds=1,
         result={
-            "model_parameters": plan[0]["parameters"],
-            "estimated_flops": plan[0]["actual_compute_flops"],
+            "model_parameters": row["total_parameters"],
+            "non_embedding_parameters": row["non_embedding_parameters"],
+            "embedding_parameters": row["embedding_parameters"],
+            "approximate_non_embedding_parameters": row[
+                "approximate_non_embedding_parameters"
+            ],
+            "estimated_flops": row["actual_compute_flops"],
+            "train_tokens": row["train_tokens"],
+            "validation_losses": [4.5, 4.25],
             "final_validation_loss": 4.25,
+            "runtime_seconds": 1.0,
+            "compile_seconds": 0.5,
+            "wall_clock_seconds": 1.5,
+            "estimated_flops_per_second": row["actual_compute_flops"],
+            "tokens_per_second": row["train_tokens"],
+            "estimated_memory_bytes": 1024,
         },
     )
 
@@ -310,15 +342,15 @@ def test_make_sweep_and_export_completed_runs(tmp_path: Path, monkeypatch):
     )
     assert exported.exit_code == 0, exported.output
     rows = json.loads(export_path.read_text())
-    assert rows == [
-        {
-            "parameters": plan[0]["parameters"],
-            "compute_budget": 5e8,
-            "final_loss": 4.25,
-            "actual_compute": plan[0]["actual_compute_flops"],
-            "experiment_id": experiment_id,
-        }
-    ]
+    assert len(rows) == 1
+    assert rows[0]["parameters"] == row["non_embedding_parameters"]
+    assert rows[0]["total_parameters"] == row["total_parameters"]
+    assert rows[0]["compute_budget"] == 5e8
+    assert rows[0]["final_loss"] == 4.25
+    assert rows[0]["actual_compute"] == row["actual_compute_flops"]
+    assert rows[0]["chain_runtime_seconds"] == 1.0
+    assert rows[0]["attempts"] == 1
+    assert rows[0]["experiment_id"] == experiment_id
     refused = runner.invoke(
         local_cli, ["export-isoflops", "--output", str(export_path)]
     )
@@ -328,3 +360,45 @@ def test_make_sweep_and_export_completed_runs(tmp_path: Path, monkeypatch):
         ["export-isoflops", "--output", str(export_path), "--force"],
     )
     assert replaced.exit_code == 0, replaced.output
+
+
+def test_make_lr_pilot_is_excluded_from_scaling_profiles(tmp_path: Path):
+    settings = local_settings(tmp_path)
+    manifest_path = write_dataset(settings)
+    output_dir = tmp_path / "pilot"
+    runner = CliRunner()
+    generated = runner.invoke(
+        local_cli,
+        [
+            "make-lr-pilot",
+            str(manifest_path),
+            "--output-dir",
+            str(output_dir),
+            "--peak-learning-rate",
+            "1e-4",
+            "--peak-learning-rate",
+            "3e-4",
+            "--hidden-size",
+            "128",
+            "--num-hidden-layers",
+            "2",
+            "--train-tokens",
+            "8192",
+            "--validation-tokens",
+            "2048",
+            "--max-runtime-seconds",
+            "10",
+            "--wandb-mode",
+            "disabled",
+        ],
+    )
+    assert generated.exit_code == 0, generated.output
+    plan = json.loads((output_dir / "plan.json").read_text())
+    assert plan["included_in_scaling_fit"] is False
+    assert len(plan["configs"]) == 2
+    for row in plan["configs"]:
+        config = LocalExperimentConfig.model_validate_json(
+            (output_dir / row["config"]).read_text()
+        )
+        assert config.target_compute_flops is None
+        assert config.compute_parameter_basis is None

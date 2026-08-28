@@ -70,6 +70,7 @@ def run_experiment(experiment_id: int, settings: LocalSettings) -> int:
     )
     from cs336_scaling.local.data import LocalTokenDataset
     from cs336_scaling.local.loop import train_and_evaluate_chunk
+    from cs336_scaling.local.planning import estimate_parameter_counts
     from cs336_scaling.local.recording import RunRecorder
     from cs336_scaling.local.wandb_sink import SafeWandbSink
     from cs336_scaling.training.model.basic_model import BasicCausalLM
@@ -166,6 +167,12 @@ def run_experiment(experiment_id: int, settings: LocalSettings) -> int:
         )
         opt_state = optimizer.init(model)
         model_params = count_params(model)
+        parameter_counts = estimate_parameter_counts(training.architecture_config)
+        if model_params != parameter_counts.total:
+            raise RuntimeError(
+                "analytic parameter count does not match the instantiated model: "
+                f"{parameter_counts.total} != {model_params}"
+            )
 
         if experiment.resume_from_experiment_id is not None:
             source = database.get_experiment(experiment.resume_from_experiment_id)
@@ -247,6 +254,10 @@ def run_experiment(experiment_id: int, settings: LocalSettings) -> int:
                 "compile_seconds": compile_seconds,
                 "estimated_memory_bytes": float(estimated_memory),
                 "model_parameters": float(model_params),
+                "non_embedding_parameters": float(parameter_counts.non_embedding),
+                "approximate_non_embedding_parameters": float(
+                    parameter_counts.approximate_non_embedding
+                ),
             },
             created_at=utc_now(),
         )
@@ -355,18 +366,36 @@ def run_experiment(experiment_id: int, settings: LocalSettings) -> int:
         attempt_tokens = (
             optimizer_step - starting_optimizer_step
         ) * training.tokens_per_optimizer_step
+        estimated_flops = 6 * parameter_counts.non_embedding * final_tokens
+        attempt_estimated_flops = 6 * parameter_counts.non_embedding * attempt_tokens
+        estimated_total_parameter_flops = 6 * model_params * final_tokens
+        attempt_estimated_total_parameter_flops = 6 * model_params * attempt_tokens
         result_value: dict[str, object] = {
             "status": "completed",
             "model_parameters": model_params,
+            "non_embedding_parameters": parameter_counts.non_embedding,
+            "embedding_parameters": parameter_counts.embedding,
+            "approximate_non_embedding_parameters": (
+                parameter_counts.approximate_non_embedding
+            ),
+            "compute_parameter_basis": "non_embedding",
             "optimizer_steps": optimizer_step,
             "train_tokens": final_tokens,
-            "estimated_flops": 6 * model_params * final_tokens,
+            "estimated_flops": estimated_flops,
+            "estimated_total_parameter_flops": estimated_total_parameter_flops,
             "attempt_train_tokens": attempt_tokens,
-            "attempt_estimated_flops": 6 * model_params * attempt_tokens,
+            "attempt_estimated_flops": attempt_estimated_flops,
+            "attempt_estimated_total_parameter_flops": (
+                attempt_estimated_total_parameter_flops
+            ),
             "runtime_seconds": runtime,
             "wall_clock_seconds": wall_clock,
             "compile_seconds": compile_seconds,
             "tokens_per_second": attempt_tokens / runtime,
+            "estimated_flops_per_second": attempt_estimated_flops / runtime,
+            "estimated_total_parameter_flops_per_second": (
+                attempt_estimated_total_parameter_flops / runtime
+            ),
             "estimated_memory_bytes": estimated_memory,
             "validation_losses": val_losses,
             "final_validation_loss": last_validation_loss,
